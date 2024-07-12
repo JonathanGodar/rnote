@@ -17,10 +17,10 @@ use std::time::Instant;
 pub enum VerticalSpaceToolRegionStyle {
     Full,
     Page,
-    Custom(f64, f64),
+    Custom(HorizontalExtent),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct HorizontalExtent {
     x0: f64,
     x1: f64,
@@ -63,7 +63,7 @@ impl Default for VerticalSpaceTool {
         Self {
             start_pos: na::vector![0.0, 0.0],
             pos: na::vector![0.0, 0.0],
-            region_style: VerticalSpaceToolRegionStyle::Custom(0.0, 0.0),
+            region_style: VerticalSpaceToolRegionStyle::Custom(HorizontalExtent::new(0.0, 0.0)),
 
             strokes_below: None,
         }
@@ -96,7 +96,7 @@ impl VerticalSpaceTool {
                     x1: x0 + page.width(),
                 }
             }
-            VerticalSpaceToolRegionStyle::Custom(x0, x1) => HorizontalExtent { x0, x1 },
+            VerticalSpaceToolRegionStyle::Custom(extent) => extent,
         }
     }
 
@@ -438,13 +438,13 @@ impl PenBehaviour for Tools {
                             .abs()
                             < VerticalSpaceTool::SNAP_START_POS_DIST
                         {
-                            if let VerticalSpaceToolRegionStyle::Custom(ref mut x0, ref mut x1) =
+                            if let VerticalSpaceToolRegionStyle::Custom(ref mut extent) =
                                 self.verticalspace_tool.region_style
                             {
                                 let origin = self.verticalspace_tool.start_pos.x;
                                 let new_x = element.pos[0];
-                                *x0 = origin.min(new_x);
-                                *x1 = origin.max(new_x);
+                                extent.x0 = origin.min(new_x);
+                                extent.x1 = origin.max(new_x);
                                 self.verticalspace_tool.strokes_below = None;
                             }
                             self.verticalspace_tool.start_pos.y - self.verticalspace_tool.pos.y
