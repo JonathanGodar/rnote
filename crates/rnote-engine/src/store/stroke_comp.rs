@@ -570,7 +570,7 @@ impl StrokeStore {
 
     /// Return the keys for strokes whose hitboxes are contained in the given Aabb.
     pub(crate) fn strokes_hitboxes_contained_in_aabb(
-        &mut self,
+        &self,
         aabb: Aabb,
         viewport: Aabb,
     ) -> Vec<StrokeKey> {

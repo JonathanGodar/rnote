@@ -14,42 +14,134 @@ use rnote_compose::penevent::{PenEvent, PenProgress};
 use std::time::Instant;
 
 #[derive(Clone, Debug)]
+pub enum VerticalSpaceToolRegionStyle {
+    Full,
+    Page,
+    Custom(f64, f64),
+}
+
+#[derive(Clone, Debug)]
+pub struct HorizontalExtent {
+    x0: f64,
+    x1: f64,
+}
+
+impl HorizontalExtent {
+    fn new(x0: f64, x1: f64) -> Self {
+        Self { x0, x1 }
+    }
+
+    fn clamp(&self, other: &Self) -> Option<Self> {
+        let x0 = self.x0.max(other.x0);
+        let x1 = self.x1.min(other.x1);
+
+        if x0 > x1 {
+            return None;
+        }
+
+        Some(Self::new(x0, x1))
+    }
+}
+
+impl Into<(f64, f64)> for HorizontalExtent {
+    fn into(self) -> (f64, f64) {
+        (self.x0, self.x1)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct VerticalSpaceTool {
-    start_pos_y: f64,
-    pos_y: f64,
-    strokes_below: Vec<StrokeKey>,
+    start_pos: na::Vector2<f64>,
+    pos: na::Vector2<f64>,
+    region_style: VerticalSpaceToolRegionStyle,
+
+    strokes_below: Option<Vec<StrokeKey>>,
 }
 
 impl Default for VerticalSpaceTool {
     fn default() -> Self {
         Self {
-            start_pos_y: 0.0,
-            pos_y: 0.0,
-            strokes_below: vec![],
+            start_pos: na::vector![0.0, 0.0],
+            pos: na::vector![0.0, 0.0],
+            region_style: VerticalSpaceToolRegionStyle::Custom(0.0, 0.0),
+
+            strokes_below: None,
         }
     }
 }
 
 impl VerticalSpaceTool {
     const Y_OFFSET_THRESHOLD: f64 = 0.1;
+
     const SNAP_START_POS_DIST: f64 = 10.;
+
     const OFFSET_LINE_COLOR: piet::Color = color::GNOME_BLUES[3];
     const THRESHOLD_LINE_WIDTH: f64 = 3.0;
     const THRESHOLD_LINE_DASH_PATTERN: [f64; 2] = [9.0, 6.0];
     const OFFSET_LINE_WIDTH: f64 = 1.5;
     const FILL_COLOR: piet::Color = color::GNOME_BRIGHTS[2].with_a8(23);
     const THRESHOLD_LINE_COLOR: piet::Color = color::GNOME_GREENS[4].with_a8(240);
+
+    fn get_horizontal_extents(&self, engine_view: &EngineView) -> HorizontalExtent {
+        match self.region_style {
+            VerticalSpaceToolRegionStyle::Full => HorizontalExtent {
+                x0: f64::NEG_INFINITY,
+                x1: f64::INFINITY,
+            },
+            VerticalSpaceToolRegionStyle::Page => {
+                let page = &engine_view.document.format;
+                let x0 = (self.start_pos.x / page.width()).floor() * page.width();
+                HorizontalExtent {
+                    x0,
+                    x1: x0 + page.width(),
+                }
+            }
+            VerticalSpaceToolRegionStyle::Custom(x0, x1) => HorizontalExtent { x0, x1 },
+        }
+    }
+
+    fn get_horizontal_extents_within_viewport(
+        &self,
+        engine_view: &EngineView,
+    ) -> Option<HorizontalExtent> {
+        let viewport = engine_view.camera.viewport();
+        let min_x = viewport.mins[0];
+        let max_x = viewport.maxs[0];
+
+        self.get_horizontal_extents(engine_view)
+            .clamp(&HorizontalExtent::new(min_x, max_x))
+    }
+
+    fn calc_strokes_below(&self, engine_view: &EngineView) -> Vec<StrokeKey> {
+        let extents = self.get_horizontal_extents(engine_view);
+
+        let bounds = Aabb::new(
+            na::point![extents.x0, self.start_pos.y],
+            na::point![extents.x1, f64::INFINITY],
+        );
+
+        engine_view
+            .store
+            .strokes_hitboxes_contained_in_aabb(bounds, engine_view.camera.viewport())
+    }
+
+    fn get_strokes_below(&mut self, engine_view: &EngineView) -> &Vec<StrokeKey> {
+        if self.strokes_below.is_none() {
+            self.strokes_below = Some(self.calc_strokes_below(engine_view));
+        }
+        return self.strokes_below.as_ref().unwrap();
+    }
 }
 
 impl DrawableOnDoc for VerticalSpaceTool {
     fn bounds_on_doc(&self, engine_view: &EngineView) -> Option<Aabb> {
-        let viewport = engine_view.camera.viewport();
+        let (x0, x1) = self
+            .get_horizontal_extents_within_viewport(engine_view)?
+            .into();
 
-        let x = viewport.mins[0];
-        let y = self.start_pos_y;
-        let width = viewport.extents()[0];
-        let height = self.pos_y - self.start_pos_y;
-        let tool_bounds = Aabb::new_positive(na::point![x, y], na::point![x + width, y + height]);
+        let y = self.start_pos.y;
+        let height = self.pos.y - self.start_pos.y;
+        let tool_bounds = Aabb::new_positive(na::point![x0, y], na::point![x1, y + height]);
 
         Some(tool_bounds)
     }
@@ -62,38 +154,39 @@ impl DrawableOnDoc for VerticalSpaceTool {
         cx.save().map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
         let total_zoom = engine_view.camera.total_zoom();
-        let viewport = engine_view.camera.viewport();
-        let x = viewport.mins[0];
-        let y = self.start_pos_y;
-        let width = viewport.extents()[0];
-        let height = self.pos_y - self.start_pos_y;
-        let tool_bounds = Aabb::new_positive(na::point![x, y], na::point![x + width, y + height]);
+        if let Some(extents) = self.get_horizontal_extents_within_viewport(&engine_view) {
+            let (x, width) = extents.into();
 
-        let tool_bounds_rect = kurbo::Rect::from_points(
-            tool_bounds.mins.coords.to_kurbo_point(),
-            tool_bounds.maxs.coords.to_kurbo_point(),
-        );
-        cx.fill(tool_bounds_rect, &Self::FILL_COLOR);
+            let y = self.start_pos.y;
+            let height = self.pos.y - self.start_pos.y;
+            let tool_bounds =
+                Aabb::new_positive(na::point![x, y], na::point![x + width, y + height]);
 
-        let threshold_line =
-            kurbo::Line::new(kurbo::Point::new(x, y), kurbo::Point::new(x + width, y));
-        cx.stroke_styled(
-            threshold_line,
-            &Self::THRESHOLD_LINE_COLOR,
-            Self::THRESHOLD_LINE_WIDTH / total_zoom,
-            &piet::StrokeStyle::new().dash_pattern(&Self::THRESHOLD_LINE_DASH_PATTERN),
-        );
+            let tool_bounds_rect = kurbo::Rect::from_points(
+                tool_bounds.mins.coords.to_kurbo_point(),
+                tool_bounds.maxs.coords.to_kurbo_point(),
+            );
+            cx.fill(tool_bounds_rect, &Self::FILL_COLOR);
 
-        let offset_line = kurbo::Line::new(
-            kurbo::Point::new(x, y + height),
-            kurbo::Point::new(x + width, y + height),
-        );
-        cx.stroke(
-            offset_line,
-            &Self::OFFSET_LINE_COLOR,
-            Self::OFFSET_LINE_WIDTH / total_zoom,
-        );
+            let threshold_line =
+                kurbo::Line::new(kurbo::Point::new(x, y), kurbo::Point::new(x + width, y));
+            cx.stroke_styled(
+                threshold_line,
+                &Self::THRESHOLD_LINE_COLOR,
+                Self::THRESHOLD_LINE_WIDTH / total_zoom,
+                &piet::StrokeStyle::new().dash_pattern(&Self::THRESHOLD_LINE_DASH_PATTERN),
+            );
 
+            let offset_line = kurbo::Line::new(
+                kurbo::Point::new(x, y + height),
+                kurbo::Point::new(x + width, y + height),
+            );
+            cx.stroke(
+                offset_line,
+                &Self::OFFSET_LINE_COLOR,
+                Self::OFFSET_LINE_WIDTH / total_zoom,
+            );
+        }
         cx.restore().map_err(|e| anyhow::anyhow!("{e:?}"))?;
         Ok(())
     }
@@ -297,12 +390,13 @@ impl PenBehaviour for Tools {
             (ToolsState::Idle, PenEvent::Down { element, .. }) => {
                 match engine_view.pens_config.tools_config.style {
                     ToolStyle::VerticalSpace => {
-                        self.verticalspace_tool.start_pos_y = element.pos[1];
-                        self.verticalspace_tool.pos_y = element.pos[1];
+                        self.verticalspace_tool.start_pos.x = element.pos[0];
+                        self.verticalspace_tool.start_pos.y = element.pos[1];
 
-                        self.verticalspace_tool.strokes_below = engine_view
-                            .store
-                            .keys_below_y(self.verticalspace_tool.pos_y);
+                        self.verticalspace_tool.pos.x = element.pos[0];
+                        self.verticalspace_tool.pos.y = element.pos[1];
+
+                        self.verticalspace_tool.strokes_below = None;
                     }
                     ToolStyle::OffsetCamera => {
                         self.offsetcamera_tool.start = element.pos;
@@ -340,27 +434,40 @@ impl PenBehaviour for Tools {
             (ToolsState::Active, PenEvent::Down { element, .. }) => {
                 match engine_view.pens_config.tools_config.style {
                     ToolStyle::VerticalSpace => {
-                        let y_offset = if (element.pos[1] - self.verticalspace_tool.start_pos_y)
+                        let y_offset = if (element.pos[1] - self.verticalspace_tool.start_pos.y)
                             .abs()
                             < VerticalSpaceTool::SNAP_START_POS_DIST
                         {
-                            self.verticalspace_tool.start_pos_y - self.verticalspace_tool.pos_y
+                            if let VerticalSpaceToolRegionStyle::Custom(ref mut x0, ref mut x1) =
+                                self.verticalspace_tool.region_style
+                            {
+                                let origin = self.verticalspace_tool.start_pos.x;
+                                let new_x = element.pos[0];
+                                *x0 = origin.min(new_x);
+                                *x1 = origin.max(new_x);
+                                self.verticalspace_tool.strokes_below = None;
+                            }
+                            self.verticalspace_tool.start_pos.y - self.verticalspace_tool.pos.y
                         } else {
                             engine_view.document.snap_position(
-                                element.pos - na::vector![0., self.verticalspace_tool.pos_y],
+                                element.pos - na::vector![0., self.verticalspace_tool.pos.y],
                             )[1]
                         };
 
                         if y_offset.abs() > VerticalSpaceTool::Y_OFFSET_THRESHOLD {
-                            engine_view.store.translate_strokes(
-                                &self.verticalspace_tool.strokes_below,
-                                na::vector![0.0, y_offset],
-                            );
-                            engine_view.store.translate_strokes_images(
-                                &self.verticalspace_tool.strokes_below,
-                                na::vector![0.0, y_offset],
-                            );
-                            self.verticalspace_tool.pos_y += y_offset;
+                            let strokes = self
+                                .verticalspace_tool
+                                .get_strokes_below(&engine_view.as_im());
+
+                            engine_view
+                                .store
+                                .translate_strokes(strokes, na::vector![0.0, y_offset]);
+
+                            engine_view
+                                .store
+                                .translate_strokes_images(strokes, na::vector![0.0, y_offset]);
+
+                            self.verticalspace_tool.pos.y += y_offset;
 
                             widget_flags.store_modified = true;
                         }
@@ -447,9 +554,11 @@ impl PenBehaviour for Tools {
             (ToolsState::Active, PenEvent::Up { .. }) => {
                 match engine_view.pens_config.tools_config.style {
                     ToolStyle::VerticalSpace => {
-                        engine_view
-                            .store
-                            .update_geometry_for_strokes(&self.verticalspace_tool.strokes_below);
+                        let strokes = self
+                            .verticalspace_tool
+                            .get_strokes_below(&engine_view.as_im());
+
+                        engine_view.store.update_geometry_for_strokes(strokes);
 
                         widget_flags |= engine_view.store.record(Instant::now());
                         widget_flags.store_modified = true;
@@ -555,8 +664,8 @@ impl Tools {
     fn reset(&mut self, engine_view: &mut EngineViewMut) {
         match engine_view.pens_config.tools_config.style {
             ToolStyle::VerticalSpace => {
-                self.verticalspace_tool.start_pos_y = 0.0;
-                self.verticalspace_tool.pos_y = 0.0;
+                self.verticalspace_tool.start_pos.y = 0.0;
+                self.verticalspace_tool.pos.y = 0.0;
             }
             ToolStyle::OffsetCamera => {
                 self.offsetcamera_tool.start = na::Vector2::zeros();
