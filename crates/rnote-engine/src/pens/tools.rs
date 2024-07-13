@@ -64,7 +64,6 @@ impl Default for VerticalSpaceTool {
             start_pos: na::vector![0.0, 0.0],
             pos: na::vector![0.0, 0.0],
             region_style: VerticalSpaceToolRegionStyle::Custom(HorizontalExtent::new(0.0, 0.0)),
-
             strokes_below: None,
         }
     }
@@ -155,12 +154,11 @@ impl DrawableOnDoc for VerticalSpaceTool {
 
         let total_zoom = engine_view.camera.total_zoom();
         if let Some(extents) = self.get_horizontal_extents_within_viewport(&engine_view) {
-            let (x, width) = extents.into();
+            let (x0, x1) = extents.into();
 
             let y = self.start_pos.y;
             let height = self.pos.y - self.start_pos.y;
-            let tool_bounds =
-                Aabb::new_positive(na::point![x, y], na::point![x + width, y + height]);
+            let tool_bounds = Aabb::new_positive(na::point![x0, y], na::point![x1, y + height]);
 
             let tool_bounds_rect = kurbo::Rect::from_points(
                 tool_bounds.mins.coords.to_kurbo_point(),
@@ -169,7 +167,7 @@ impl DrawableOnDoc for VerticalSpaceTool {
             cx.fill(tool_bounds_rect, &Self::FILL_COLOR);
 
             let threshold_line =
-                kurbo::Line::new(kurbo::Point::new(x, y), kurbo::Point::new(x + width, y));
+                kurbo::Line::new(kurbo::Point::new(x0, y), kurbo::Point::new(x1, y));
             cx.stroke_styled(
                 threshold_line,
                 &Self::THRESHOLD_LINE_COLOR,
@@ -178,8 +176,8 @@ impl DrawableOnDoc for VerticalSpaceTool {
             );
 
             let offset_line = kurbo::Line::new(
-                kurbo::Point::new(x, y + height),
-                kurbo::Point::new(x + width, y + height),
+                kurbo::Point::new(x0, y + height),
+                kurbo::Point::new(x1, y + height),
             );
             cx.stroke(
                 offset_line,
