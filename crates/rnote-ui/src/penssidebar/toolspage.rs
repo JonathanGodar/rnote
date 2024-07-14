@@ -1,6 +1,9 @@
 // Imports
 use crate::{RnAppWindow, RnCanvasWrapper};
-use gtk4::{glib, glib::clone, prelude::*, subclass::prelude::*, CompositeTemplate, ToggleButton};
+use gtk4::{
+    glib, glib::clone, prelude::*, subclass::prelude::*, Button, CompositeTemplate, ListBox,
+    MenuButton, Popover, ToggleButton,
+};
 use rnote_engine::pens::pensconfig::toolsconfig::ToolStyle;
 
 mod imp {
@@ -15,6 +18,21 @@ mod imp {
         pub(crate) toolstyle_offsetcamera_toggle: TemplateChild<ToggleButton>,
         #[template_child]
         pub(crate) toolstyle_zoom_toggle: TemplateChild<ToggleButton>,
+
+        #[template_child]
+        pub(crate) toolsconfig_menubutton: TemplateChild<MenuButton>,
+        #[template_child]
+        pub(crate) toolsconfig_popover: TemplateChild<Popover>,
+        #[template_child]
+        pub(crate) toolsconfig_popover_close_button: TemplateChild<Button>,
+        #[template_child]
+        pub(crate) vertical_space_tool_extent_listbox: TemplateChild<ListBox>,
+        #[template_child]
+        pub(crate) vertical_space_tool_region_full: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub(crate) vertical_space_tool_region_page: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub(crate) vertical_space_tool_region_custom: TemplateChild<adw::ActionRow>,
     }
 
     #[glib::object_subclass]
