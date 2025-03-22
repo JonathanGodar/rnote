@@ -14,42 +14,6 @@ use rnote_compose::penevent::{PenEvent, PenProgress};
 use std::time::Instant;
 
 #[derive(Clone, Debug)]
-pub enum VerticalSpaceToolRegionStyle {
-    Full,
-    Page,
-    Custom(HorizontalExtent),
-}
-
-#[derive(Clone, Debug, Copy)]
-pub struct HorizontalExtent {
-    x0: f64,
-    x1: f64,
-}
-
-impl HorizontalExtent {
-    fn new(x0: f64, x1: f64) -> Self {
-        Self { x0, x1 }
-    }
-
-    fn clamp(&self, other: &Self) -> Option<Self> {
-        let x0 = self.x0.max(other.x0);
-        let x1 = self.x1.min(other.x1);
-
-        if x0 > x1 {
-            return None;
-        }
-
-        Some(Self::new(x0, x1))
-    }
-}
-
-impl Into<(f64, f64)> for HorizontalExtent {
-    fn into(self) -> (f64, f64) {
-        (self.x0, self.x1)
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct VerticalSpaceTool {
     start_pos: na::Vector2<f64>,
     pos: na::Vector2<f64>,

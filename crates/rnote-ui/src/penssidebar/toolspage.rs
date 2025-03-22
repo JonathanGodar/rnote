@@ -111,6 +111,15 @@ impl RnToolsPage {
     pub(crate) fn init(&self, appwindow: &RnAppWindow) {
         let imp = self.imp();
 
+        let toolsconfig_popover = imp.toolsconfig_popover.get();
+
+        // Popovers
+        imp.toolsconfig_popover_close_button.connect_clicked(
+            clone!(@weak toolsconfig_popover => move |_| {
+                toolsconfig_popover.popdown();
+            }),
+        );
+
         imp.toolstyle_verticalspace_toggle.connect_toggled(clone!(@weak appwindow => move |toggle| {
             if toggle.is_active() {
                 appwindow.active_tab_wrapper().canvas().engine_mut().pens_config.tools_config.style = ToolStyle::VerticalSpace;
@@ -128,6 +137,14 @@ impl RnToolsPage {
                 appwindow.active_tab_wrapper().canvas().engine_mut().pens_config.tools_config.style = ToolStyle::Zoom;
             }
         }));
+
+        imp.vertical_space_tool_extent_listbox.connect_row_selected(
+            clone!(@weak self as toolspage, @weak appwindow => move |_, _| {
+                if let Some(buildertype) = brushpage.buildertype() {
+                    appwindow.active_tab_wrapper().canvas().engine_mut().pens_config.brush_config.builder_type = buildertype;
+                }
+            }),
+        );
     }
 
     pub(crate) fn refresh_ui(&self, active_tab: &RnCanvasWrapper) {

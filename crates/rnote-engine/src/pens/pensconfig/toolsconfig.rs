@@ -45,4 +45,47 @@ impl TryFrom<u32> for ToolStyle {
 pub struct ToolsConfig {
     #[serde(rename = "style")]
     pub style: ToolStyle,
+
+    vertical_space_tool_region_style: VerticalSpaceToolRegionStyle,
+}
+
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Debug)]
+pub struct HorizontalExtent {
+    x0: f64,
+    x1: f64,
+}
+
+impl HorizontalExtent {
+    fn new(x0: f64, x1: f64) -> Self {
+        Self { x0, x1 }
+    }
+
+    fn clamp(&self, other: &Self) -> Option<Self> {
+        let x0 = self.x0.max(other.x0);
+        let x1 = self.x1.min(other.x1);
+
+        if x0 > x1 {
+            return None;
+        }
+
+        Some(Self::new(x0, x1))
+    }
+}
+
+impl Into<(f64, f64)> for HorizontalExtent {
+    fn into(self) -> (f64, f64) {
+        (self.x0, self.x1)
+    }
+}
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize, Debug)]
+pub(crate) enum VerticalSpaceToolRegionStyle {
+    Full,
+    Page,
+    Custom(HorizontalExtent),
+}
+
+impl Default for VerticalSpaceToolRegionStyle {
+    fn default() -> Self {
+        Self::Full
+    }
 }
